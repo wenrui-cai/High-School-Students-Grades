@@ -1,0 +1,303 @@
+---
+title: "Final2"
+author: "Wen"
+date: "12/4/2017"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+Alcohol <- read.csv("student-mat.csv")
+```
+
+In order to analyze the data, we first load the libraries DataComputing and mosaic: these libraries help making changes in our dataset. We also combine the variables Daily alcohol consumption (Dalc) with Weekend alcohol consumption (Walc) and create a new variable in the dataset called DWalc. 
+Then we attach Alcohol to make easier the data analysis process.
+```{r, warning=FALSE, message=FALSE}
+library(DataComputing)
+library(mosaic)
+Alcohol <- Alcohol %>%
+  mutate(DWalc = Dalc + Walc)
+```
+
+```{r}
+attach(Alcohol)
+Alcohol3 <- Alcohol[-c(which(G3=='0')),]
+detach(Alcohol)
+attach(Alcohol3)
+```
+
+```{r}
+boxplot(G3~sex) #males perform slightly better than females
+boxplot(G3~age) #even though 20years old students seem to perform better than the other age groups, there are only 3 observations of this age so it might not be a good predictor
+table(age)
+boxplot(G3~address) #students coming from urban homes perform slightly better than the ones coming from rural homes
+boxplot(G3~studytime) #unfortunately there might be a correlation between studytime and final grades but it is not evident. 
+plot(G3, studytime)
+histogram(studytime)
+modelstudytime = lm(G3~studytime)
+summary(modelstudytime)
+boxplot(G3~failures, xlab = "failures") #it can be seen that as the number of failures in past classes increases, the final grade for this math class is more likely to decrease
+table(failures)
+boxplot(G3~activities) #there might be a small positive correlation between participating to activities and higher grades
+boxplot(G3~higher) #students who plan to go to higher education tend to have higher grades
+boxplot(G3~internet) #seems that students who have access to internet have slightly higher grades
+table(internet) 
+boxplot(G3~romantic) #seems that students who are not involved in a relationship have slighly higher grades
+boxplot(G3~freetime) #not easy to judge
+table(freetime)
+boxplot(G3~goout) #seems the frequency of going out might suggest a lower grade
+boxplot(G3~health) #it is very scary but seems like students who have very bad health might perform better
+table(health)
+plot(absences, G3) #students with a lot of absences can't get high grades
+DWalc <- Dalc + Walc
+boxplot(G3~DWalc) #worth exploring more
+```
+
+### Regression analysis
+```{r}
+lmfit3 = lm(G3~sex+age+address+studytime+failures+activities+higher+internet+romantic+freetime+goout+health+absences+DWalc, data = Alcohol3)
+```
+
+```{r}
+residuals=lmfit3$residuals
+y_hat=lmfit3$fitted.values
+#Not linear
+plot(y_hat,residuals,xlab='Fitted values',ylab='Residuals',main='Residuals vs Fitted')
+abline(h=0)
+#Not normal
+qqnorm(residuals,main='Residuals Q-Q plot') 
+qqline(residuals)
+shapiro.test(residuals)
+```
+
+Four assumptions
+L
+I
+N
+E
+
+```{r}
+cor(Alcohol[,c(3, 14, 25, 26, 29, 30, 34)])
+```
+
+```{r, warning=FALSE, message=FALSE}
+require(leaps)
+X1=model.matrix(G3~sex+age+address+studytime+failures+activities+higher+internet+romantic+freetime+goout+health+absences+DWalc)
+R2=vector("numeric",14)
+  for(j in 1:14){
+    y_tmp=X1[,1+j]
+    x_tmp=as.matrix(X1[,-c(1,1+j)])
+    lm_fit=lm(y_tmp~x_tmp)
+    R2[j]=summary(lm_fit)$r.squared
+}
+VIF=1/(1-R2)
+names(VIF)=colnames(X1)[-1]
+VIF
+```
+
+
+
+### Outliers
+```{r}
+residuals=lmfit3$residuals
+sigma_hat=summary(lmfit3)$sigma
+X1=model.matrix(G3~sex+age+address+studytime+failures+activities+higher+internet+romantic+freetime+goout+health+absences+DWalc)
+H=X1%*%solve(t(X1)%*%X1)%*%t(X1)
+h=diag(H)
+r=residuals/(sigma_hat*sqrt(1-h))
+p=15
+n=395
+thresh2=2*p/n
+thresh3=3*p/n
+which(h>thresh2) #showing the points of the leverage
+which(h>thresh3)
+plot(h,xlab='Observation #',ylab='Leverage',main='Leverage')
+abline(h=thresh2,lty=2,col="red")
+abline(h=thresh3,lty=2,col="blue")
+t=r*sqrt((n-p-1)/(n-p-r^2))
+plot(t,xlab='Observation #',ylab='Studentized residuals',main='Studentized residuals')
+which(t< (-2)) 
+which(t > 2)
+D=(1/p)*r^2*h/(1-h)
+plot(D,xlab='Observation #',ylab='Cook\'s distance',main='Cook\'s distance')
+which(D>0.015)
+
+```
+
+#### Model selection
+
+We use Best model selection method 
+
+-- describe --
+
+```{r}
+subset=regsubsets(G3~sex+age+address+studytime+failures+activities+higher+internet+romantic+freetime+goout+health+absences+DWalc,method="exhaustive",nbest=1,nvmax=14,data=Alcohol3)
+
+sum_subset=summary(subset)
+sum_subset$which
+
+p_full=15
+p=2:p_full
+RSS_p=sum_subset$rss
+totalSS=sum((G3-mean(G3))^2)
+R2_p=1-RSS_p/totalSS
+R2_p 
+plot(p,R2_p,xlab="Number of betas",ylab="R-squared")
+n=nrow(Alcohol3)
+R2_adj=1-(RSS_p/(n-p))/(totalSS/(n-1))
+R2_adj
+plot(p,R2_adj,xlab="Number of betas",ylab="Adjusted R-squared") #10 best model (9 pred)
+sigma_hat_full=summary(lmfit3)$sigma
+C_p=RSS_p/(sigma_hat_full^2)+2*p-n 
+C_p
+plot(p,C_p,xlab="Number of betas",ylab="Mallow's Cp") #7 (6 pred)
+abline(0,1) # what should be set for this one?
+aic_p=n*log(RSS_p/n)+2*p
+aic_p
+plot(p,aic_p,xlab="Number of betas",ylab="AIC") #9 (8 predictors)
+bic_p=n*log(RSS_p/n)+p*log(n)
+bic_p
+plot(p,bic_p,xlab="Number of betas",ylab="BIC") #5 (4 predictors)
+cbind(sum_subset$which,R2_adj,C_p,aic_p,bic_p)
+
+#install.packages("glmnet")
+
+#How to use Lasso?
+library(glmnet)
+y=Alcohol3$G3
+X2 <- X1[,-1]
+lasso_fit=glmnet(X2,y,alpha=1)
+plot(lasso_fit)
+k=10
+cv_lasso=cv.glmnet(X2,y,nfolds=k)
+plot(cv_lasso)
+#look for cv and
+```
+
+What model do we want?
+```{r}
+model4 <- lm(G3~failures+internet+goout+absences)
+model6 <- lm(G3~sex+address+studytime+failures+goout+absences)
+model8 <- lm(G3~sex+address+studytime+failures+internet+goout+health+absences)
+model9 <- lm(G3~sex+address+studytime+failures+internet+goout+health+absences+DWalc)
+
+summary(model4)
+summary(model6)
+summary(model8)
+summary(model9)
+plot(model4)
+residuals4=model4$residuals
+shapiro.test(residuals4)
+plot(model6)
+residuals6=model6$residuals
+shapiro.test(residuals6)
+plot(model8)
+residuals8=model8$residuals
+shapiro.test(residuals8)
+plot(model9)
+residuals9=model9$residuals
+shapiro.test(residuals9)
+
+```
+```{r}
+require(leaps)
+X1=model.matrix(G3~failures+internet+goout+absences)
+R2=vector("numeric",4)
+  for(j in 1:4){
+    y_tmp=X1[,1+j]
+    x_tmp=as.matrix(X1[,-c(1,1+j)])
+    lm_fit=lm(y_tmp~x_tmp)
+    R2[j]=summary(lm_fit)$r.squared
+}
+VIF=1/(1-R2)
+names(VIF)=colnames(X1)[-1]
+VIF
+X1=model.matrix(G3~sex+address+studytime+failures+goout+absences)
+R2=vector("numeric",6)
+  for(j in 1:6){
+    y_tmp=X1[,1+j]
+    x_tmp=as.matrix(X1[,-c(1,1+j)])
+    lm_fit=lm(y_tmp~x_tmp)
+    R2[j]=summary(lm_fit)$r.squared
+}
+VIF=1/(1-R2)
+names(VIF)=colnames(X1)[-1]
+VIF
+X1=model.matrix(G3~sex+address+studytime+failures+internet+goout+health+absences)
+R2=vector("numeric",8)
+  for(j in 1:8){
+    y_tmp=X1[,1+j]
+    x_tmp=as.matrix(X1[,-c(1,1+j)])
+    lm_fit=lm(y_tmp~x_tmp)
+    R2[j]=summary(lm_fit)$r.squared
+}
+VIF=1/(1-R2)
+names(VIF)=colnames(X1)[-1]
+VIF
+X1=model.matrix(G3~sex+address+studytime+failures+internet+goout+health+absences+DWalc)
+R2=vector("numeric",9)
+  for(j in 1:9){
+    y_tmp=X1[,1+j]
+    x_tmp=as.matrix(X1[,-c(1,1+j)])
+    lm_fit=lm(y_tmp~x_tmp)
+    R2[j]=summary(lm_fit)$r.squared
+}
+VIF=1/(1-R2)
+names(VIF)=colnames(X1)[-1]
+VIF
+
+
+```
+
+
+## PART B: If Alcohol was the main predictor...
+
+#### Alcohol vs G3
+First, we will show the distribution of how much people drink per week
+```{r, warning=FALSE}
+Alcohol4<- Alcohol3 %>%
+  group_by(DWalc) %>%
+  summarise(count = n())
+pie(Alcohol4$count, labels= c('2','3','4','5','6','7','8','9','10'))
+```
+
+2 = very little to no drink
+10 = drink a lot a lot
+
+We see that most of people drink at least once a week.
+
+Then we calculate the mean and compare it with the others
+```{r}
+meanG3 <- mean(G3)
+plot(DWalc, G3, data=Alcohol)
+abline(meanG3, 0)
+```
+
+From the scatterplot, seems people who drink less alcohol (especially minimal 2) score above average and also obtain highest grades.
+
+We still compute our model with simple linear regression and use T-test 
+```{r}
+alcoholmodel <- lm(G3~DWalc)
+summary(alcoholmodel)
+plot(alcoholmodel)
+```
+We reject! Alcohol is significant
+
+#### Alcohol vs G3 considering the other variables
+
+Even though Alcohol vs G3 was bad, we still want to compare the model without alcohol with the full model
+```{r}
+modelnoalcohol <- lm(G3~sex+age+address+studytime+failures+activities+higher+internet+romantic+freetime+goout+health+absences)
+anova(lmfit3, modelnoalcohol)
+```
+Alcohol is not significant considering all the others 
+
+
+
+
+
+
+
